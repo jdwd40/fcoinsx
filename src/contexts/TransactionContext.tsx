@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useAuth } from './AuthContext';
 import { supabase } from '../lib/supabase';
 import { handleSupabaseError } from '../utils/supabase';
+import { PostgrestError } from '@supabase/supabase-js';
 
 interface Transaction {
   id: string;
@@ -78,7 +79,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
       setTransactions(data || []);
     } catch (err) {
       console.error('Error loading transactions:', err);
-      setError(handleSupabaseError(err).message);
+      setError(handleSupabaseError(err as PostgrestError).message);
     } finally {
       setLoading(false);
     }
@@ -125,13 +126,14 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
 
     try {
       // Get current user to ensure we have the latest session
-      const { data: { user: { id: userId } }, error: userError } = await supabase.auth.getUser();
+      const { data, error: userError } = await supabase.auth.getUser();
       
-      if (userError) {
+      if (userError || !data.user) {
         console.error('Failed to get user:', userError);
         throw new Error('Authentication error');
       }
 
+      const userId = data.user.id;
       console.log('Current user:', userId);
       console.log('Transaction amount:', totalAmount);
 
@@ -192,11 +194,19 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
 
       // Update portfolio
       const { data: portfolio, error: portfolioError } = await supabase
-        .from('portfolios')
+        .from('portfolio')
         .select('quantity')
         .eq('user_id', userId)
         .eq('coin_symbol', coinSymbol)
         .single();
+
+      // It's okay if the portfolio doesn't exist for a buy
+      if (portfolioError && type === 'BUY' && portfolioError.code === 'PGRST116') {
+        console.log('No existing portfolio entry - will create new one');
+      } else if (portfolioError) {
+        console.error('Error fetching portfolio:', portfolioError);
+        throw new Error('Failed to fetch portfolio data');
+      }
 
       console.log('Current portfolio:', portfolio);
 
@@ -207,23 +217,23 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
           // Update existing portfolio entry
           const newQuantity = (portfolio.quantity || 0) + quantity;
           portfolioOperation = supabase
-            .from('portfolios')
+            .from('portfolio')
             .update({ 
               quantity: newQuantity,
-              updated_at: new Date().toISOString()
+              last_updated: new Date().toISOString()
             })
             .eq('user_id', userId)
             .eq('coin_symbol', coinSymbol);
         } else {
           // Create new portfolio entry
           portfolioOperation = supabase
-            .from('portfolios')
+            .from('portfolio')
             .insert({
               user_id: userId,
               coin_symbol: coinSymbol,
               quantity: quantity,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
+              cost_basis: pricePerCoin,
+              last_updated: new Date().toISOString()
             });
         }
       } else {
@@ -279,7 +289,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
           // Selling all coins - delete the entry
           console.log('Selling all coins - deleting portfolio entry');
           const { error: deleteError } = await supabase
-            .from('portfolios')
+            .from('portfolio')
             .delete()
             .eq('user_id', userId)
             .eq('coin_symbol', coinSymbol);
@@ -292,10 +302,10 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
           // Selling part of holdings - update quantity
           console.log('Updating portfolio quantity to:', newQuantity);
           const { error: updateError } = await supabase
-            .from('portfolios')
+            .from('portfolio')
             .update({ 
               quantity: newQuantity,
-              updated_at: new Date().toISOString()
+              last_updated: new Date().toISOString()
             })
             .eq('user_id', userId)
             .eq('coin_symbol', coinSymbol);
@@ -308,7 +318,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
 
         // Verify the final state
         const { data: verifyData } = await supabase
-          .from('portfolios')
+          .from('portfolio')
           .select('quantity')
           .eq('user_id', userId)
           .eq('coin_symbol', coinSymbol)

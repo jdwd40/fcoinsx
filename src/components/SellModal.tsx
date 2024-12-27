@@ -42,7 +42,7 @@ const SellModal: React.FC<SellModalProps> = ({
       if (!user) return;
 
       const { data: portfolio, error: portfolioError } = await supabase
-        .from('portfolios')
+        .from('portfolio')
         .select('quantity')
         .eq('user_id', user.id)
         .eq('coin_symbol', coinSymbol)

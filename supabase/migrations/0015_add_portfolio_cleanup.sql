@@ -11,10 +11,10 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Drop the trigger if it exists
-DROP TRIGGER IF EXISTS cleanup_portfolio_trigger ON portfolios;
+DROP TRIGGER IF EXISTS cleanup_portfolio_trigger ON portfolio;
 
 -- Create the trigger
 CREATE TRIGGER cleanup_portfolio_trigger
-    BEFORE INSERT OR UPDATE ON portfolios
+    BEFORE INSERT OR UPDATE ON portfolio
     FOR EACH ROW
     EXECUTE FUNCTION clean_zero_quantities();

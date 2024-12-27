@@ -33,7 +33,7 @@ export function UserPortfolio() {
         console.log('Loading portfolio for user:', user.id);
 
         const { data: portfolioData, error: portfolioError } = await supabase
-          .from('portfolios')
+          .from('portfolio')
           .select('coin_symbol, quantity')
           .eq('user_id', user.id)
           .gt('quantity', 0.00000001); // Only get meaningful quantities
