@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+  
+  body {
+    @apply text-base text-gray-900 antialiased;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* Improve touch targets */
+  button, 
+  [role="button"],
+  input,
+  select {
+    @apply min-h-[44px] min-w-[44px];
+  }
+  
+  /* Improve readability */
+  @screen md {
+    p, li {
+      max-width: 75ch;
+    }
+  }
+}
+
+@layer components {
+  .container-padding {
+    @apply px-4 sm:px-6 lg:px-8;
+  }
+  
+  .responsive-grid {
+    @apply grid gap-4 sm:gap-6 lg:gap-8
+    grid-cols-1 
+    sm:grid-cols-2 
+    lg:grid-cols-3;
+  }
+  
+  .card {
+    @apply bg-white rounded-lg shadow-lg p-4 sm:p-6;
+  }
+  
+  .input-base {
+    @apply w-full px-4 py-2 rounded-lg
+    border border-gray-300
+    focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500
+    transition-colors;
+  }
+  
+  .button-base {
+    @apply inline-flex items-center justify-center
+    px-4 py-2 rounded-lg
+    font-medium
+    focus:outline-none focus:ring-2 focus:ring-offset-2
+    transition-colors
+    disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .button-primary {
+    @apply button-base
+    bg-indigo-600 text-white
+    hover:bg-indigo-700
+    focus:ring-indigo-500;
+  }
+}

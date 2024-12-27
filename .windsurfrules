@@ -1,0 +1,260 @@
+## 1. **Backend Requirements and Conceptual Flow**
+
+1. **User Authentication & Data**  
+   - Handled by Supabase.  
+   - The backend can still verify tokens (if needed) to ensure security for certain routes (optional if you already trust the Supabase session).
+
+2. **Market Simulation**  
+   - The backend must randomly generate market trends/events (Bull, Bear, Boom, Bust) and assign them durations (5–20 minutes).  
+   - Each coin also undergoes additional random “coin events” (5 positive, 5 negative), each with varying impact (low, medium, high).  
+   - Price changes happen much faster than real-world intervals (for testing).  
+
+3. **Database**  
+   - Use PostgreSQL.  
+   - Store coin data, including real-time simulated prices, historical prices (for charts/trends if needed), and event states (e.g., active bull or bear event, coin-level event).
+
+4. **Express.js + MVC**  
+   - **Models**: Database logic (queries, schema definitions).  
+   - **Controllers**: Business logic (fetch coin info, apply random events, etc.).  
+   - **Routes**: RESTful JSON endpoints for the frontend to consume.  
+
+---
+
+## 2. **Project Structure (MVC)**
+
+A typical Node.js + Express MVC structure might look like this:
+
+```
+backend/
+├── config/
+│   ├── db.js            // Database connection setup
+│   └── index.js         // App-wide configurations (if any)
+├── controllers/
+│   ├── coinController.js
+│   ├── eventController.js
+│   └── ...
+├── models/
+│   ├── coinModel.js
+│   ├── eventModel.js
+│   └── ...
+├── routes/
+│   ├── coinRoutes.js
+│   ├── eventRoutes.js
+│   └── ...
+├── services/
+│   ├── marketService.js  // Market simulation logic
+│   └── ...
+├── middlewares/
+│   ├── authMiddleware.js // Validate tokens from Supabase if needed
+│   └── ...
+├── utils/
+│   └── randomGenerator.js
+├── server.js             // Express app entry point
+└── package.json
+```
+
+### **Explanation**  
+- **config**: Holds environment configurations, such as database connection.  
+- **controllers**: Each controller handles requests/responses for a specific resource (coins, events, etc.).  
+- **models**: Defines our data entities (tables in PostgreSQL) and includes logic to interact with them.  
+- **routes**: Groups endpoints under a path (e.g., `/api/coins`, `/api/events`).  
+- **services**: Contains the heart of your app’s logic, like the random generation of events and applying them.  
+- **middlewares**: Optional authentication checks or logging.  
+- **utils**: Helper functions, e.g., random number generators, date/time utilities, etc.  
+
+---
+
+## 3. **Database Design**
+
+### **Tables Overview**
+
+1. **Coins**  
+   - **id** (PK)  
+   - **name** (string)  
+   - **symbol** (string)  
+   - **current_price** (decimal)  
+   - **created_at** (timestamp)  
+   - **updated_at** (timestamp)  
+
+2. **Coin_Events** (for storing coin-specific events, if needed)  
+   - **id** (PK)  
+   - **coin_id** (FK to Coins)  
+   - **event_type** (enum: e.g., "positive_high", "negative_medium" etc.)  
+   - **duration_minutes** (int)  
+   - **start_time** (timestamp)  
+   - **end_time** (timestamp)  
+
+3. **Global_Events** (for storing global market events like Bull/Bear)  
+   - **id** (PK)  
+   - **event_type** (enum: "Bull", "Bear", "Boom", "Bust")  
+   - **duration_minutes** (int)  
+   - **start_time** (timestamp)  
+   - **end_time** (timestamp)  
+
+4. **Price_History** (for storing historical prices, if needed for charts)  
+   - **id** (PK)  
+   - **coin_id** (FK to Coins)  
+   - **price** (decimal)  
+   - **recorded_at** (timestamp)  
+
+5. **Users / Portfolios / Transactions**  
+   - These may be in Supabase, but you can replicate references or store minimal data if your backend logic needs them.  
+   - If you do need partial duplication:  
+     - **User_Portfolio** (user_id, coin_id, amount_held)  
+     - **Transactions** (id, user_id, coin_id, buy_or_sell, quantity, transaction_time)  
+
+### **Key Points**  
+- Storing a “current_price” in **Coins** allows quick fetching for the frontend.  
+- You can optionally store a “baseline_price” and track changes relative to it during events.  
+- **Global_Events** can store the current global event. You only need one active event at a time (though you could queue them).  
+- For **Coin_Events**, each coin can have one or many simultaneous events, or you can choose to store only the current active event.  
+
+---
+
+## 4. **Market Simulation Logic**
+
+1. **Event Generation**  
+   - **Global Event**: Periodically check if an event is active. If not, randomly choose one (Bull, Bear, Boom, Bust) plus a random duration (5–20 minutes).  
+   - **Coin Events**: For each coin, randomly assign a positive or negative event from the pool (5 positive, 5 negative), also with a random impact level (low, medium, high), and duration.  
+
+2. **Price Adjustment**  
+   - Based on the current global event, modify each coin’s price by a certain factor.  
+     - **Bull**: Price goes up by X% each interval.  
+     - **Bear**: Price goes down by X% each interval.  
+     - **Boom**: Greater upward spike than Bull.  
+     - **Bust**: Greater downward spike than Bear.  
+   - Incorporate **Coin Event** overlays. For instance, a positive coin event might add an additional +5% to the coin’s movement, a negative event might do -5%, etc.  
+   - These adjustments happen every short interval (e.g., 15–60 seconds for testing).  
+
+3. **Scheduling**  
+   - You can use `setInterval` or a scheduling library like [Node Cron](https://www.npmjs.com/package/node-cron) to run the logic.  
+   - After each update, write the new price to the **Coins** table and optionally record it in **Price_History**.  
+   - Check if the event’s end time has passed; if so, clear or set a new event.  
+
+4. **Handling Duration**  
+   - Keep a “start_time” and “end_time” for each event.  
+   - If current time >= `end_time`, end the event and reset/choose a new one.  
+
+---
+
+## 5. **API Endpoints (Routes)**
+
+Here’s a possible endpoint structure:
+
+1. **`GET /api/coins`**  
+   - Returns a list of all coins with current prices and relevant event data.
+
+2. **`GET /api/coins/:id`**  
+   - Returns a single coin’s details, including current price, event impacts, etc.  
+
+3. **`GET /api/events/global`**  
+   - Returns the current global market event or events.  
+
+4. **`GET /api/events/coin/:id`**  
+   - Returns the active event(s) for the specified coin.  
+
+5. **`POST /api/coins/create`** (optional, if you need to add coins through the backend)  
+   - Adds a new coin to the database.  
+
+6. **`PUT /api/coins/:id/price`** (optional)  
+   - Updates a coin’s price (for admin or testing).  
+
+7. **`POST /api/simulate`** (optional)  
+   - A route to manually trigger the simulation logic for debugging.  
+
+**Note**: The actual CRUD operations for coins and events might vary depending on how you manage them. The crucial part is having endpoints the frontend can query to display data.
+
+---
+
+## 6. **Controllers Logic**
+
+### **CoinController**  
+- **`getAllCoins`**: Fetch from `Coins` table, include relevant event data if needed.  
+- **`getCoinById`**: Return details for one coin, merging data from `Coin_Events` table if needed.  
+- **`updateCoinPrice`** (internal or external usage): Adjust price and save it.  
+
+### **EventController**  
+- **`getGlobalEvent`**: Return the active global event (Bull, Bear, etc.).  
+- **`getCoinEvent`**: Return active coin-specific events.  
+- **`createGlobalEvent`** or **`createCoinEvent`**: If your simulation triggers a new event.  
+
+---
+
+## 7. **Services** (Market Simulation)
+
+### **marketService.js**  
+- **`initMarketSimulation`**:  
+  - Schedules a routine check (with `node-cron` or `setInterval`) that calls `applyMarketChanges` every X seconds.  
+- **`applyMarketChanges`**:  
+  - Reads the active global event, applies the relevant price change formula to each coin.  
+  - Reads each coin’s active event, modifies the final price by an additional factor.  
+  - Updates **Coins** table with the new price.  
+  - Logs to **Price_History** if desired.  
+- **`createRandomEvent`**:  
+  - Picks an event from [Bull, Bear, Boom, Bust] + random duration.  
+  - Assigns random coin events with positive/negative types.  
+  - Stores them in the DB.  
+
+---
+
+## 8. **Middleware**
+
+1. **Auth Middleware** (optional, depending on your trust in Supabase tokens)  
+   - Checks the request for a valid Supabase JWT.  
+   - Verifies it on the backend before allowing access to certain endpoints.  
+
+2. **Error Handling Middleware**  
+   - Central place to catch exceptions and return consistent error messages.
+
+---
+
+## 9. **High-Level Workflow**
+
+1. **Server Startup**  
+   - Connect to PostgreSQL.    
+   - Start Express server.  
+   - Initialize market simulation (either starts with a random event or no event).  
+
+2. **Event Generation**  
+   - On schedule or via trigger, check for an active global event:  
+     - If none, create one randomly.  
+   - For each coin, if it has no active coin event, create one randomly.  
+
+3. **Price Updates**  
+   - Every X seconds, apply the global event’s effect on all coins.  
+   - Add or subtract additional effect from coin-level events.  
+   - Store results in DB.  
+
+4. **Frontend Consumption**  
+   - The React app calls `GET /api/coins` to display updated coin prices.  
+   - The React app calls `GET /api/events/global` to show whether the market is bullish, bearish, etc.  
+   - React uses Supabase for user wallet info, portfolio, transactions.  
+
+5. **Event Completion**  
+   - Once an event’s `end_time` is reached, mark the event as complete.  
+   - Possibly queue another event or randomly assign a new one.  
+
+---
+
+## 10. **Scalability & Additional Considerations**
+
+1. **Caching**  
+   - If the system grows large, you might consider an in-memory cache (Redis) for quick price reads.  
+   - This reduces load on PostgreSQL.  
+
+2. **Historical Data Growth**  
+   - If you save prices every few seconds, data might balloon. You might keep a daily/hourly summary or purge old records.  
+
+3. **Real-Time Updates**  
+   - If you want real-time streaming to the frontend, consider WebSockets or libraries like Socket.io.  
+   - This would let you push price updates instantly rather than relying on polling.  
+
+4. **Testing**  
+   - Unit tests for controllers and services (Jest or Mocha/Chai).  
+   - Integration tests to ensure routes respond with correct data.  
+
+5. **Security**  
+   - Validate incoming data.  
+   - Ensure you’re not exposing unnecessary endpoints for event manipulation (you don’t want a user to trigger “Boom” artificially, unless it’s part of the game mechanic!).  
+
+---
